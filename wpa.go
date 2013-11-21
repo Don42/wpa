@@ -20,7 +20,42 @@ package wpa
 
 import "code.google.com/p/go.crypto/pbkdf2"
 import "crypto/sha1"
+import "crypto/md5"
+import "crypto/hmac"
 
-func DeriveWPAPMK(passphrase, salt string) []byte {
-	return pbkdf2.Key([]byte(passphrase), []byte(salt), 4096, 32, sha1.New)
+func DeriveWPAPMK(passphrase, ssid string) []byte {
+	return pbkdf2.Key([]byte(passphrase), []byte(ssid), 4096, 32, sha1.New)
+}
+
+func PRF(pmk []byte, app_identifier string, data []byte, keyLen int) []byte {
+	prf := hmac.New(sha1.New, pmk)
+	hashLen := prf.Size()
+	numBlocks := (keyLen + hashLen - 1) / hashLen
+	var null = make([]byte, 1)
+	null[0] = byte(0)
+	var r []byte
+	for n := 0; n < numBlocks; n++ {
+		prf.Reset()
+		prf.Write([]byte(app_identifier))
+		prf.Write(null)
+		prf.Write(data)
+		appendix := make([]byte, 1)
+		appendix[0] = byte(n)
+		prf.Write(appendix)
+		r = prf.Sum(r)
+	}
+	return r[:keyLen]
+}
+
+func CalculateMICValue(ptk, data []byte, keyLen int) []byte {
+	prf := hmac.New(md5.New, ptk)
+	hashLen := prf.Size()
+	numBlocks := (keyLen + hashLen - 1) / hashLen
+	var r []byte
+	for n := 0; n < numBlocks; n++ {
+		prf.Reset()
+		prf.Write(data)
+		r = prf.Sum(r)
+	}
+	return r[:keyLen]
 }
